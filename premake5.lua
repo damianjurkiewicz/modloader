@@ -59,8 +59,9 @@ newaction {
     Install Functionality
 --]]
 install_files = {}
-cmd_copyfile = os.is("windows") and { "xcopy", "/f /y /i" }    or { "cp", "-v" }
-cmd_copydir  = os.is("windows") and { "xcopy", "/e /f /y /i" } or { "cp", "-vr" }
+-- Poprawka: os.is() jest przestarzałe, użyj os.ishost()
+cmd_copyfile = os.ishost("windows") and { "xcopy", "/f /y /i" }    or { "cp", "-v" }
+cmd_copydir  = os.ishost("windows") and { "xcopy", "/e /f /y /i" } or { "cp", "-vr" }
 
 -- Gets the install command for the specified file
 function installcommand(file, destdir)
@@ -164,11 +165,12 @@ function dummyproject()
     flags { "NoPCH" }
 
     -- Dummy cpp file for Premake's generated none  project (bug workaround)
-    configuration "gmake"
+    -- Poprawka: configuration na filter
+    filter "system:gmake"
         kind "StaticLib"
         files { "src/shared/dummy.cpp" }
         
-    configuration {}
+    filter {}
 end
 
 --[[
@@ -185,9 +187,11 @@ solution "modloader"
     targetdir "bin"
     implibdir "bin"
 
+    -- Poprawka: 'flags' na nowe funkcje
+    staticruntime "On"  -- Zastępuje flagę "StaticRuntime"
+    symbols "On"        -- Zastępuje flagę "Symbols"
+
     flags {
-        "StaticRuntime",
-        "Symbols",          -- Produce symbols whenever possible for logging purposes
         "NoImportLib",      -- Mod Loader itself and it's plugins are dlls which exports some funcs but a implib isn't required
         --"NoRTTI", (std.data uses it now on handling.cpp)
         "NoBufferSecurityCheck"
@@ -214,26 +218,40 @@ solution "modloader"
         "src/shared",
     }
 
-    configuration "Debug*"
-        flags { "Symbols" }
+    -- Poprawka: configuration na filter ORAZ flags na symbols
+    filter "configurations:Debug*"
+        symbols "On"
         
-    configuration "Release*"
+    filter "configurations:Release*"
         defines { "NDEBUG" }
         optimize "Speed"
 
-    configuration "gmake"
+    -- Poprawka: configuration na filter
+    filter "system:gmake"
         buildoptions { "-std=gnu++14", "-Wno-deprecated" }
-    configuration "vs*"
+    
+    filter "action:vs*"
         buildoptions { "/arch:IA32" }           -- disable the use of SSE/SSE2 instructions (old game, old computers)
         buildoptions { "/Zm250", "/bigobj" }    -- gta3.std.data is a monster
 
-    configuration "vs2012"
+    filter "action:vs2012"
         toolset "v110_xp"
-    configuration "vs2013"
+    
+    filter "action:vs2013"
         toolset "v120_xp"
-    configuration "vs2015"
+    
+    filter "action:vs2015"
         toolset "v140_xp"
         buildoptions { "/Zc:threadSafeInit-" }
+
+    -- Poprawka: Dodana sekcja dla vs2022 używająca filter i /std:c++14
+    filter "action:vs2022"
+        buildoptions { 
+            "/std:c++14", 
+            "/Zc:threadSafeInit-" 
+        }
+
+    filter {} -- Zresetuj filtr
 
     project "docs"
         dummyproject()
@@ -272,8 +290,11 @@ solution "modloader"
     project "shared"
         dummyproject()
         setupfiles "src/shared"
-        configuration { "gmake" }
+        -- Poprawka: configuration na filter
+        filter "system:gmake"
             includedirs { "src/shared/stdinc" } -- gmake compatibility since it'll compile the dummyproject
+        
+        filter {} -- Zresetuj filtr
 
 
     local gta3_plugins = {  -- ordered by time taken to compile
@@ -297,5 +318,3 @@ solution "modloader"
         for i, name in ipairs(gta3_plugins) do
             addplugin(name)
         end
-
-
