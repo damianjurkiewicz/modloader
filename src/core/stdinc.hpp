@@ -6,4 +6,5 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <dbghelp.h>
+#include <stdexcept>
 
