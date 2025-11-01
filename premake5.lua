@@ -181,6 +181,8 @@ solution "modloader"
     startproject "build_gta3"
 
     configurations { "Release", "Debug" }
+	
+	characterset "MBCS"
 
     location( _OPTIONS["outdir"] )
     targetprefix "" -- no 'lib' prefix on gcc
