@@ -27,6 +27,7 @@
 #include <windows.h>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace injector
 {
