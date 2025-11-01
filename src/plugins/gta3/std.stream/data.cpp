@@ -6,6 +6,7 @@
  */
 #include <stdinc.hpp>
 #include "streaming.hpp"
+#include <stdexcept>
 using namespace std::placeholders;
 
 extern "C"
