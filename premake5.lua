@@ -275,28 +275,6 @@ solution "modloader"
         flags { "NoPCH" }
         setupfiles "src/translator"
 
-    project "modloader"
-        language "C++"
-        kind "SharedLib"
-        targetname "modloader"
-        targetextension ".asi"
-        binarydir ""
-        addinstall( { isdir = false, source = "bin/modloader.asi", destination = "./" } )
-        links { "addr", "shlwapi", "dbghelp" }
-        setupfiles "include"
-        setupfiles "src/core"
-        pchsetup "src/core"
-
-    project "shared"
-        dummyproject()
-        setupfiles "src/shared"
-        -- Poprawka: configuration na filter
-        filter "system:gmake"
-            includedirs { "src/shared/stdinc" } -- gmake compatibility since it'll compile the dummyproject
-        
-        filter {} -- Zresetuj filtr
-
-
     local gta3_plugins = {  -- ordered by time taken to compile
         "std.movies",
         "std.scm",
@@ -309,6 +287,32 @@ solution "modloader"
         "std.asi",
         "std.data"
     }
+
+
+    project "modloader"
+        language "C++"
+        kind "SharedLib"
+        targetname "modloader"
+        targetextension ".asi"
+        binarydir ""
+        addinstall( { isdir = false, source = "bin/modloader.asi", destination = "./" } )
+        links { "addr", "shlwapi", "dbghelp" }
+        setupfiles "include"
+        setupfiles "src/core"
+        pchsetup "src/core"
+		dependson(gta3_plugins)
+
+    project "shared"
+        dummyproject()
+        setupfiles "src/shared"
+        -- Poprawka: configuration na filter
+        filter "system:gmake"
+            includedirs { "src/shared/stdinc" } -- gmake compatibility since it'll compile the dummyproject
+        
+        filter {} -- Zresetuj filtr
+
+
+
 
     project "build_gta3"
         dummyproject()
