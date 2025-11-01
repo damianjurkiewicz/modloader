@@ -30,7 +30,7 @@ struct object_traits : public data_traits
                                 real_t, real_t, real_t, real_t, real_t, real_t, real_t, int16_t, int16_t, char,
                                 SAOnly<tuple<char, char>>,
                                 delimopt,
-                                SAOnly<tuple<vec3, insen<string>, real_t, vec3, real_t, char, char>>>;
+                                 SAOnly<tuple<optional<vec3>, optional<insen<string>>, optional<real_t>, optional<vec3>, optional<real_t>, optional<char>, optional<char>>>>;
 
     key_type key_from_value(const value_type& value)
     {
