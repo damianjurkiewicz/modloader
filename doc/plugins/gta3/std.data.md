@@ -35,7 +35,7 @@ The following data files are currently supported:
 | pedstats.dat   |    X     |   X   |        |
 | statdisp.dat   |    X     |   X   |        |
 | shopping.dat   |    X     |   X   |        |
-| object.dat     |    X     |   X   |   X    |
+| object.dat     |    X     |   X   |        |
 | surface.dat    |    X     |   X   |        |
 | surfinfo.dat   |    X     |   X   |        |
 | surfaud.dat    |    X     |   X   |        |
@@ -69,7 +69,6 @@ __Additional Notes__:
       (i.e. IPL DATA/MAPS/TEST.IPL should be structured like modloader/My Map/data/maps/test.ipl)
       although this is **NOT** necessary anymore since Mod Loader 0.2.x
    * This makes the loading screen dynamic, removing the flickering when there are too few gta.dat entries (usually on TCs)
-   * Matching for data lines in readme files are supported for some data files (including `object.dat`)
-   * For `object.dat`, you can either supply a complete `object.dat` file or drop a text readme (any `.txt` under your mod folder) containing valid `object.dat` lines; matching lines are merged with the game's data on load.
+   * Matching for data lines in readme files are supported for some data files
    * This performs caching of the data files and readmes in the modloader directory, giving a better performance in
      not needing to merge data every time you load the game.
