@@ -7,10 +7,86 @@
 #include "../data_traits.hpp"
 #include <traits/gta3/sa.hpp>
 #include <interfaces/gta3/std.stream.hpp>
+#include <unordered_set>
+#include <sstream>
+#include <windows.h>
 using namespace modloader;
 using std::tuple;
 using std::string;
 using ipair = std::pair<int, int>;
+
+static DataPlugin* g_ide_plugin = nullptr;
+
+namespace
+{
+    struct IdeConflictTracker
+    {
+        int active_merges = 0;
+        std::unordered_set<int> seen_ids;
+        std::set<int> conflicts;
+
+        static IdeConflictTracker& Instance()
+        {
+            static IdeConflictTracker tracker;
+            return tracker;
+        }
+
+        void begin_merge()
+        {
+            if(active_merges == 0)
+            {
+                seen_ids.clear();
+                conflicts.clear();
+            }
+            ++active_merges;
+        }
+
+        template<class Container>
+        void scan_ids(const Container& container)
+        {
+            for(const auto& kv : container)
+            {
+                if(auto id = boost::get<int>(&kv.first))
+                {
+                    if(!seen_ids.insert(*id).second)
+                        conflicts.insert(*id);
+                }
+            }
+        }
+
+        void end_merge()
+        {
+            if(active_merges > 0 && --active_merges == 0)
+            {
+                if(!conflicts.empty())
+                    notify_conflict();
+
+                seen_ids.clear();
+                conflicts.clear();
+            }
+        }
+
+        void notify_conflict() const
+        {
+            std::ostringstream stream;
+
+            for(auto it = conflicts.begin(); it != conflicts.end(); ++it)
+            {
+                if(it != conflicts.begin())
+                    stream << ", ";
+                stream << *it;
+            }
+
+            const auto ids_text = stream.str();
+            const std::string message = "Wykryto konflikt ID w plikach IDE: " + ids_text;
+
+            if(g_ide_plugin)
+                g_ide_plugin->Log("IDE ID conflict detected for IDs: %s", ids_text.c_str());
+
+            MessageBoxA(nullptr, message.c_str(), "Mod Loader", MB_OK | MB_ICONWARNING);
+        }
+    };
+}
 
 namespace { // avoid namespace conflict
 
@@ -174,6 +250,22 @@ struct ide_traits : public data_traits
         return value.apply_visitor(key_from_value_visitor());
     }
 
+    template<class StoreType>
+    bool premerge(StoreType& store)
+    {
+        auto& tracker = IdeConflictTracker::Instance();
+        tracker.begin_merge();
+        tracker.scan_ids(store.container());
+        return true;
+    }
+
+    template<class StoreType>
+    bool posmerge(StoreType&)
+    {
+        IdeConflictTracker::Instance().end_merge();
+        return true;
+    }
+
     // Path section have to be handled manually
     template<class StoreType>
     static bool setbyline(StoreType& store, value_type& data, const gta3::section_info* section, const std::string& line)
@@ -313,6 +405,8 @@ static std::function<void()> MakeIdeReloader();
 // Object Types Merger
 static auto xinit = initializer([](DataPlugin* plugin_ptr)
 {
+    g_ide_plugin = plugin_ptr;
+
     // IDE Merger
     if(gvm.IsSA())
     {
