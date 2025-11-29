@@ -7,6 +7,11 @@
 #include "../data_traits.hpp"
 #include <traits/gta3/sa.hpp>
 #include <interfaces/gta3/std.stream.hpp>
+#include <algorithm>
+#include <cctype>
+#include <unordered_map>
+#include <set>
+#include <sstream>
 using namespace modloader;
 using std::tuple;
 using std::string;
@@ -32,6 +37,50 @@ struct enum_map<PathType>
 };
 
 } // anon namespace
+
+namespace
+{
+
+struct IdeConflictTracker
+{
+    std::unordered_map<int, int> idCounts; // ID -> count
+    std::set<int> conflicts;               // IDs with count >= 2
+
+    void Reset()
+    {
+        idCounts.clear();
+        conflicts.clear();
+    }
+
+    void RegisterId(int id)
+    {
+        int &count = idCounts[id];
+        ++count;
+        if(count == 2)
+            conflicts.insert(id);
+    }
+
+    bool HasConflicts() const
+    {
+        return !conflicts.empty();
+    }
+
+    std::string BuildConflictList() const
+    {
+        std::ostringstream oss;
+        for(auto it = conflicts.begin(); it != conflicts.end(); ++it)
+        {
+            if(it != conflicts.begin())
+                oss << ", ";
+            oss << *it;
+        }
+        return oss.str();
+    }
+};
+
+static IdeConflictTracker g_IdeConflictTracker;
+
+}
 
 // Path section data (III)
 using path_head = tuple<PathType, int, dummy_string>;
@@ -271,10 +320,36 @@ struct ide_traits : public data_traits
         return list;
     }
 
+    template<class StoreType>
+    bool premerge(StoreType& store)
+    {
+        if(!store.traits().is_from_modloader)
+            return true;
+
+        auto& container = store.container();
+        for(const auto& kv : container)
+        {
+            if(const auto* idPtr = boost::get<int>(&kv.first))
+                g_IdeConflictTracker.RegisterId(*idPtr);
+        }
+
+        return true;
+    }
+
+    template<class StoreType>
+    bool posmerge(StoreType& store)
+    {
+        (void)store;
+        return true;
+    }
+
 public:
     path_ptr current_path;       // Working header, if on a path section
-    int      current_path_index; // Current index of the working path   
+    int      current_path_index; // Current index of the working path
     std::vector<path_ptr> path_heads;  // List of paths and current index
+    std::string source_path;
+    bool is_from_modloader = false;
+    bool logged_modloader_path = false;
 
     path_ptr add_path(const path_head& head)
     {
@@ -285,16 +360,49 @@ public:
     template<class Archive>
     void serialize(Archive& archive)
     {
-        archive(this->path_heads);
+        archive(this->path_heads, this->source_path, this->is_from_modloader, this->logged_modloader_path);
     }
 };
 
 //
-using ide_store = gta3::data_store<ide_traits, std::map<
+using ide_container = std::map<
                         ide_traits::key_type, ide_traits::value_type
-                        >>;
+                        >;
+
+using ide_store = gta3::data_store<ide_traits, ide_container>;
 
 REGISTER_RTTI_FOR_ANY(ide_store);
+
+namespace gta3
+{
+
+template<>
+template<>
+bool data_store<ide_traits, ide_container>::load_from_file<const char*>(const char*& filename)
+{
+    auto& traits = this->traits();
+
+    traits.source_path = filename? filename : "";
+
+    std::string lower = traits.source_path;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](char c)
+    {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    });
+
+    traits.is_from_modloader = (lower.find("/modloader/") != std::string::npos)
+        || (lower.find("\\modloader\\") != std::string::npos);
+
+    if(traits.is_from_modloader && !traits.logged_modloader_path)
+    {
+        plugin_ptr->Log("IDE from modloader: %s", traits.source_path.c_str());
+        traits.logged_modloader_path = true;
+    }
+
+    return this->load(*this, filename, parse_from_file());
+}
+
+}
 
 
 // sections function specialization
@@ -409,6 +517,10 @@ static std::function<void()> MakeIdeReloader()
     // The following functor will be called whenever IDEs need refresh
     return []
     {
+        bool hadConflicts = g_IdeConflictTracker.HasConflicts();
+        std::string conflictIds = hadConflicts? g_IdeConflictTracker.BuildConflictList() : std::string();
+        g_IdeConflictTracker.Reset();
+
         using emptyide_hook = function_hooker<0x5B8428, void*(const char*, const char*)>;
 
         // Those are used on each IDE line that is parsed
@@ -574,6 +686,13 @@ static std::function<void()> MakeIdeReloader()
         for(auto& ide : ide_files)
         {
             LoadObjectTypes(ide.c_str());
+        }
+
+        if(hadConflicts)
+        {
+            plugin_ptr->Log("IDE ID conflict detected in modloader IDE files: %s", conflictIds.c_str());
+            std::string message = "Wykryto konflikt ID w plikach IDE z folderu modloader: " + conflictIds;
+            MessageBoxA(nullptr, message.c_str(), "Mod Loader", MB_OK | MB_ICONWARNING);
         }
 
         refresher->Release();
