@@ -760,7 +760,11 @@ class caching_stream
             for(size_t i = 0; i < readme_point; ++i)
             {
                 auto& path   = this->listing[i].first;
-                bool relpath = this->listing[i].second.relpath;
+                auto& finfo  = this->listing[i].second;
+                bool relpath = finfo.relpath;
+
+                SetSourceFileIfSupported(this->store[i], path, finfo);
+
                 bool good    = this->store[i].load_from_file(relpath?
                                                 path.c_str() :
                                                 std::string(plugin_ptr->loader->gamepath).append(path).c_str()
@@ -775,7 +779,7 @@ class caching_stream
         void MakeReadmeStore()
         {
             assert(this->store.capacity() > this->store.size());
-            
+
             this->store.emplace_back(this->store.front());  // make it be equivalent to the default file
             auto& store = this->store.back();
 
@@ -786,4 +790,25 @@ class caching_stream
             store.set_as_default(false);
         }
 
+    private:
+
+        template<class Store>
+        static auto SetSourceFileIfSupported(Store& store, const std::string& path, const info& finfo)
+            -> decltype(store.traits().SetSourceFile(path, bool()), void())
+        {
+            bool from_modloader = !finfo.relpath
+                && path.find("\\modloader\\") != std::string::npos
+                && !finfo.is_default;
+
+            if(!from_modloader)
+                from_modloader = !finfo.relpath
+                    && path.find("/modloader/") != std::string::npos
+                    && !finfo.is_default;
+
+            store.traits().SetSourceFile(path, from_modloader);
+        }
+
+        template<class Store>
+        static void SetSourceFileIfSupported(Store&, const std::string&, const info&)
+        {}
 };

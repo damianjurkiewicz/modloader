@@ -118,6 +118,18 @@ class DataPlugin : public modloader::basic_plugin
             { return *this; }
         };
 
+        template<class Traits, class = void>
+        struct has_merge_begin_session : std::false_type {};
+
+        template<class Traits>
+        struct has_merge_begin_session<Traits, std::void_t<decltype(Traits::BeginMergeSession())>> : std::true_type {};
+
+        template<class Traits, class = void>
+        struct has_merge_end_session : std::false_type {};
+
+        template<class Traits>
+        struct has_merge_end_session<Traits, std::void_t<decltype(Traits::EndMergeSession())>> : std::true_type {};
+
         // Stores an unique identifier of readme reader
         // This should be used only and only for checking in the serialized format that the readers match
         struct readme_reader_magic_t
@@ -587,9 +599,28 @@ class DataPlugin : public modloader::basic_plugin
                 return range.first->second.first;
             else if(count >= 2 || !readme_data.empty())   // any file to merge? we need at least 2 files to be able to do merging
             {
+                constexpr bool has_begin_session = has_merge_begin_session<traits_type>::value;
+                constexpr bool has_end_session   = has_merge_end_session<traits_type>::value;
+                bool merge_session_started = false;
+
+                if constexpr(has_begin_session)
+                {
+                    traits_type::BeginMergeSession();
+                    merge_session_started = true;
+                }
+
+                auto EndMergeSession = [&]()
+                {
+                    if constexpr(has_end_session)
+                    {
+                        if(merge_session_started)
+                            traits_type::EndMergeSession();
+                    }
+                };
+
                 auto fsfile = filename;
                 caching_stream<StoreType> cs(fsfile, unique);
-                
+
                 // Add data files we'll work on to the caching stream
                 cs.AddFile(file.c_str(), true);
                 cs.AddReadmeData(std::move(readme_data));
@@ -619,7 +650,10 @@ class DataPlugin : public modloader::basic_plugin
                     {
                         //Log("No data file '%s' changed since last time, using cached data file", fsfile.c_str());
                         if(IsPathA(cs.FullPath().c_str()))
+                        {
+                            EndMergeSession();
                             return cs.Path();
+                        }
                         else
                             Log("Warning: Could not find cached data file '%s', skipping cache...", cs.Path().c_str());
                     }
@@ -649,12 +683,15 @@ class DataPlugin : public modloader::basic_plugin
                 if(gta3::merge_to_file<store_type>(cs.FullPath().c_str(), cs.StoreList().begin(), cs.StoreList().end(), traits_type::domflags_fn()))
                 {
                     if(allow_listing) cache.WriteCachedStore_Listing(cs);
+                    EndMergeSession();
                     return cs.Path();
                 }
                 else
                 {
                     plugin_ptr->Log("Warning: Failed to merge (%s) data files into \"%s\"", what, cs.Path().c_str());
                 }
+
+                EndMergeSession();
             }
 
             return std::string();  // use default file

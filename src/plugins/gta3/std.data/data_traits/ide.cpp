@@ -12,6 +12,53 @@ using std::tuple;
 using std::string;
 using ipair = std::pair<int, int>;
 
+struct IdeConflictTracker
+{
+    std::unordered_map<int, int> count;
+
+    static IdeConflictTracker& Instance()
+    {
+        static IdeConflictTracker tracker;
+        return tracker;
+    }
+
+    void BeginSession()
+    {
+        count.clear();
+    }
+
+    void RegisterId(int id)
+    {
+        ++count[id];
+    }
+
+    void EndSession()
+    {
+        std::vector<int> conflicts;
+        for(const auto& entry : count)
+        {
+            if(entry.second > 1)
+                conflicts.push_back(entry.first);
+        }
+
+        if(!conflicts.empty())
+        {
+            std::sort(conflicts.begin(), conflicts.end());
+            std::ostringstream oss;
+            for(size_t i = 0; i < conflicts.size(); ++i)
+            {
+                if(i)
+                    oss << ", ";
+                oss << conflicts[i];
+            }
+
+            auto message = "Wykryto konflikt ID w plikach IDE z folderu modloader: " + oss.str();
+            plugin_ptr->Log("Warning: %s", message.c_str());
+            MessageBoxA(nullptr, message.c_str(), "Mod Loader", MB_OK | MB_ICONWARNING);
+        }
+    }
+};
+
 namespace { // avoid namespace conflict
 
 enum class PathType : uint8_t {
@@ -102,6 +149,21 @@ struct ide_traits : public data_traits
     static const bool has_sections      = true;     // Does this data file contains sections?
     static const bool per_line_section  = false;
 
+    void SetSourceFile(const std::string&, bool from_modloader)
+    {
+        is_from_modloader = from_modloader;
+    }
+
+    static void BeginMergeSession()
+    {
+        IdeConflictTracker::Instance().BeginSession();
+    }
+
+    static void EndMergeSession()
+    {
+        IdeConflictTracker::Instance().EndSession();
+    }
+
     // Detouring traits
     struct dtraits : modloader::dtraits::OpenFile
     {
@@ -141,6 +203,10 @@ struct ide_traits : public data_traits
     // key_from_value
     struct key_from_value_visitor : gta3::data_section_visitor<key_type>
     {
+        ide_traits* traits;
+
+        key_from_value_visitor(ide_traits& traits) : traits(&traits) {}
+
         // path section key should be the object being set (type_pedcar, object_id) and the index in the object nodes.
         key_type operator()(const path_type& slice) const
         { return datalib::get(get<1>(slice)); }
@@ -159,6 +225,8 @@ struct ide_traits : public data_traits
         key_type operator()(const T& slice) const
         {
             int id = int(get<0>(slice));
+            if(traits && traits->is_from_modloader)
+                IdeConflictTracker::Instance().RegisterId(id);
             if(gvm.IsIII() && id == 199) // lopolyguy
                 return -id; // put this before a ped entry happens, i.e. at the top
             return id;
@@ -171,7 +239,7 @@ struct ide_traits : public data_traits
 
     key_type key_from_value(const value_type& value)
     {
-        return value.apply_visitor(key_from_value_visitor());
+        return value.apply_visitor(key_from_value_visitor(*this));
     }
 
     // Path section have to be handled manually
@@ -273,8 +341,9 @@ struct ide_traits : public data_traits
 
 public:
     path_ptr current_path;       // Working header, if on a path section
-    int      current_path_index; // Current index of the working path   
+    int      current_path_index; // Current index of the working path
     std::vector<path_ptr> path_heads;  // List of paths and current index
+    bool is_from_modloader = false;
 
     path_ptr add_path(const path_head& head)
     {
