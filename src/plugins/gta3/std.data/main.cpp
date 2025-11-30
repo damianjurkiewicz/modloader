@@ -119,7 +119,11 @@ static std::string ExtractModNameFromPath(const std::string& fullpath) {
 
 // Funkcja sprawdzająca konflikt
 // Zwraca true jeśli wykryto konflikt
-static bool CheckForConflict(int id, const std::string& currentModName) {
+// Funkcja sprawdzająca konflikt
+// Zwraca true jeśli wykryto konflikt
+// Funkcja sprawdzająca konflikt
+// Zwraca true jeśli wykryto konflikt
+static bool CheckForConflict(int id, const std::string& currentModName, bool isIdeFile) {
     LoadOriginalIDE_IDs();
 
     // 1. Ignoruj oryginalne ID gry
@@ -135,26 +139,34 @@ static bool CheckForConflict(int id, const std::string& currentModName) {
     }
     else {
         // Wykryto konflikt lub duplikat
+        bool isExternalConflict = (it->second != currentModName);
         char buffer[512];
-        if (it->second != currentModName) {
-            sprintf_s(buffer, "Conflict detected: Model ID %d is defined in mod \"%s\" and mod \"%s\".\n"
-                "Game will continue loading, but instability may occur.",
+
+        if (isExternalConflict) {
+            sprintf_s(buffer, "Conflict detected: Model ID %d is defined in mod \"%s\" and mod \"%s\".",
                 id, it->second.c_str(), currentModName.c_str());
         }
         else {
-            sprintf_s(buffer, "Duplicate detected: Model ID %d is defined twice in mod \"%s\".\n"
-                "Game will continue loading, but instability may occur.",
+            sprintf_s(buffer, "Duplicate detected: Model ID %d is defined twice in mod \"%s\".",
                 id, currentModName.c_str());
         }
 
-        // MB_SYSTEMMODAL sprawia, że okno jest zawsze na wierzchu, ale nie blokuje innych wątków w tle
-        // Chociaż w przypadku ModLoadera i tak zatrzyma wczytywanie do momentu kliknięcia OK
-        MessageBoxA(NULL, buffer, "ModLoader Conflict Detected", MB_ICONWARNING | MB_OK);
+        // ZAWSZE loguj do pliku modloader.log
+        plugin_ptr->Log("%s", buffer);
+
+        // DECYZJA O OKIENKU (MessageBox):
+        // Jeśli plik to .ide -> NIGDY nie pokazuj okienka (tylko log), bo gra sobie poradzi (nadpisze linię).
+        // Jeśli plik to .txt -> POKAŻ okienko, bo tutaj konflikty są bardziej ryzykowne.
+
+        if (!isIdeFile) {
+            std::string msgBoxContent = std::string(buffer) + "\nGame will continue loading, but instability may occur.";
+            MessageBoxA(NULL, msgBoxContent.c_str(), "ModLoader Conflict Detected", MB_ICONWARNING | MB_OK);
+        }
+
         return true;
     }
     return false;
 }
-// -------------------------------------------------------------------------
 
 
 /*
@@ -373,15 +385,14 @@ bool DataPlugin::InstallFile(const modloader::file& file)
                         continue;
                     }
 
+                    // Parsujemy ID tylko jeśli jesteśmy w sekcji definicji
                     if (isDefiningSection) {
                         int id = ParseIDFromLine(trimLine);
                         if (id >= 0) {
-                            if (!hasWarned && CheckForConflict(id, modName)) {
-                                hasWarned = true; // Zaznacz, że już ostrzegliśmy o tym pliku
-
-                                // [ZMIANA]: Zamiast return false (blokowania), robimy break.
-                                // break przerywa skanowanie reszty pliku (żeby nie było spamu),
-                                // ale pozwala przejść do instalacji pliku poniżej (gra się załaduje).
+                            // Przekazujemy 'true', bo to plik .ide
+                            // Dzięki temu CheckForConflict tylko zaloguje błąd, ale nie pokaże okna.
+                            if (!hasWarned && CheckForConflict(id, modName, true)) {
+                                hasWarned = true;
                                 break;
                             }
                         }
@@ -788,12 +799,11 @@ std::set<size_t> DataPlugin::ParseReadme(const modloader::file& file, std::pair<
                         int id = ParseIDFromLine(line);
                         if (id >= 0)
                         {
-                            // Używamy flagi hasWarned, żeby nie spamować
-                            if (!hasWarned && CheckForConflict(id, modName))
+                            // Przekazujemy 'false', bo to plik tekstowy (.txt)
+                            // Dla .txt zawsze chcemy widzieć okienko
+                            if (!hasWarned && CheckForConflict(id, modName, false))
                             {
-                                // Wyświetlamy błąd raz, ale NIE PRZERYWAMY (brak return)
                                 hasWarned = true;
-                                // Kod idzie dalej i dodaje merger, więc gra się załaduje
                             }
                         }
                     }
