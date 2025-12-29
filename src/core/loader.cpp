@@ -276,8 +276,6 @@ void Loader::Shutdown()
 {
     if(this->bRunning)
     {
-        this->bShuttingDown = true;
-        this->bEnableLog = false;
         this->bRunning = false;
     }
 }
@@ -290,7 +288,6 @@ void Loader::NotifyProcessDetach()
 {
     this->bProcessDetaching = true;
     this->bShuttingDown = true;
-    this->bEnableLog = false;
 }
 
 /*
