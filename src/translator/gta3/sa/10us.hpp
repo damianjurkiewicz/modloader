@@ -477,4 +477,16 @@ static void sa_10us(std::map<memory_pointer_raw, memory_pointer_raw>& map)
         map[0x57FE57] = 0x57FE57;
         map[0x57FE96] = 0x57FE96;
     }
+
+    if (true)
+    {
+        // Hook w RwTextureRead (dla RwTexDictionaryFindNamedTexture)
+        map[0x731733] = 0x731733;
+
+        // Hook w CFileLoader::LoadTexDictionary (dla AssignRemapTxd)
+        map[0x5B62C2] = 0x5B62C2;
+
+        // Hook w CGame::Initialise (dla CTheScripts::Init)
+        map[0x4408C3] = 0x4408C3;
+    }
 }
