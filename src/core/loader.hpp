@@ -549,7 +549,11 @@ class Loader : public modloader_t
     public:
         
         // Constructor
-        Loader() : mods("modloader")
+        Loader() :
+            mods("modloader"),
+            bRunning(false),
+            bShuttingDown(false),
+            bProcessDetaching(false)
         {}
         
         // Patches the game code to run this core
