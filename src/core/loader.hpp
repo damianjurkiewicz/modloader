@@ -19,7 +19,8 @@
 #include <map>
 #include <set>
 
-extern class Loader loader;
+class Loader;
+extern Loader& loader;
 
 using modloader::ref_list;
 using modloader::NormalizePath;
@@ -477,6 +478,8 @@ class Loader : public modloader_t
         bool            bEnablePlugins;         // Enable the loading of ML plugins
         bool            bEnableMenu;            // Enable the menu system
         bool            bAutoRefresh;           // Enables automatic refreshing of mods
+        bool            bShuttingDown;          // Prevents shutdown-time logging/cleanup
+        bool            bProcessDetaching;      // True during DLL_PROCESS_DETACH
 
         // Unique ids
         uint64_t        currentModId;           // Current id for the unique mod id
@@ -555,6 +558,7 @@ class Loader : public modloader_t
         // Start or Shutdown the loader
         void Startup();
         void Shutdown();
+        void NotifyProcessDetach();
         
         // Logging functions
         static void LogGameVersion();
