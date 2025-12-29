@@ -27,13 +27,13 @@ class additionaltxd : public modloader::basic_plugin
 REGISTER_ML_PLUGIN(::hello_world_plugin);
 
 /*
- *  HelloWorldPlugin::GetInfo
+ *  HelloWorldPlugin::GetInfoo
  *      Returns information about this plugin
  */
 const additionaltxd::info& additionaltxd::GetInfo()
 {
     static const char* extable[] = { 0 };
-    static const info xinfo      = { "std.helloworld", get_version_by_date(), "LINK/2012", -1, extable };
+    static const info xinfo      = { "std.additionaltxd", get_version_by_date(), "LINK/2012", -1, extable };
     return xinfo;
 }
 
@@ -43,7 +43,7 @@ const additionaltxd::info& additionaltxd::GetInfo()
  */
 bool additionaltxd::OnStartup()
 {
-    Log("HELLO FROM std.helloworld");
+    Log("HELLO FROM std.additionaltxd");
     return true;
 }
 
