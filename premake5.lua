@@ -279,6 +279,7 @@ solution "modloader"
 
     local gta3_plugins = {  -- ordered by time taken to compile
         "std.movies",
+		"std.additionaltxd",
         "std.scm",
         "std.sprites",
         "std.fx",
