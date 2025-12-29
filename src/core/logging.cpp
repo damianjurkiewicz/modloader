@@ -90,7 +90,7 @@ void Loader::Log(const char* msg, ...)
  */
 void Loader::vLog(const char* msg, va_list va)
 {
-    if(logfile)
+    if(logfile && !loader.bShuttingDown)
     {
         loader.numBytesInLog += vfprintf(logfile, msg, va) + 2;
         fputc('\n', logfile);

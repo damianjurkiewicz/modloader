@@ -17,8 +17,8 @@ extern int InstallExceptionCatcher(void (*cb)(const char* buffer));
 #define USE_TEST 0
 REGISTER_ML_NULL();
 
-// Mod Loader object
-Loader loader;
+// Mod Loader object (intentionally leaked to avoid shutdown-time destructors)
+Loader& loader = *new Loader();
 
 /*
  * DllMain
@@ -31,6 +31,10 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
     {
         if(!loader.Patch())
             return FALSE;
+    }
+    else if(fdwReason == DLL_PROCESS_DETACH)
+    {
+        loader.NotifyProcessDetach();
     }
     return TRUE;
 }
@@ -157,6 +161,8 @@ void Loader::Startup()
         this->maxBytesInLog  = 5242880;     // 5 MiB
         this->currentModId   = 0;
         this->currentFileId  = 0x8000000000000000;  // File id should have the hibit set
+        this->bShuttingDown  = false;
+        this->bProcessDetaching = false;
         
         // Open the log file
         OpenLog();
@@ -270,22 +276,21 @@ void Loader::Shutdown()
 {
     if(this->bRunning)
     {
-        // Unload the plugins
-        Log("\nShutting down Mod Loader...");
-        this->ShutdownWatcher();
-        this->ShutdownMenu();
-        this->UnloadPlugins();
-        Log("Mod Loader has been shutdown.");
-        
-        // Finish containers
-        this->plugins_priority.clear();
-        this->extMap.clear();
-        this->mods.Clear();
-        
-        // Close the log file
-        this->CloseLog();
+        this->bShuttingDown = true;
+        this->bEnableLog = false;
         this->bRunning = false;
     }
+}
+
+/*
+ *  Loader::NotifyProcessDetach
+ *      Marks the loader as shutting down during DLL unload
+ */
+void Loader::NotifyProcessDetach()
+{
+    this->bProcessDetaching = true;
+    this->bShuttingDown = true;
+    this->bEnableLog = false;
 }
 
 /*
