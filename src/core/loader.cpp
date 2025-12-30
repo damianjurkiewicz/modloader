@@ -277,7 +277,7 @@ void Loader::Shutdown()
     if(this->bRunning)
     {
         this->bShuttingDown = true;
-        if(!this->bProcessDetaching)
+        if(!this->bProcessDetaching && !this->bSkipShutdown)
         {
             this->ShutdownWatcher();
             this->ShutdownMenu();

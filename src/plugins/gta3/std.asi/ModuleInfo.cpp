@@ -119,6 +119,8 @@ void ThePlugin::LocateCleo()
                     this->iCleoVersion = CLEO_GetVersion? CLEO_GetVersion() : 0;
                 
                     Log("CLEO library version %X found at \"%s\"", iCleoVersion, p);
+                    if(this->iCleoVersion >= 0x05000000)
+                        this->loader->bSkipShutdown = true;
                     if(this->bHasNoCleoFolder = !IsPath((std::string(loader->gamepath) + "./CLEO/").c_str()))
                         Log("Warning: No CLEO folder found, may cause problems");
                 

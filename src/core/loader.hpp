@@ -480,6 +480,7 @@ class Loader : public modloader_t
         bool            bAutoRefresh;           // Enables automatic refreshing of mods
         bool            bShuttingDown;          // Prevents shutdown-time logging/cleanup
         bool            bProcessDetaching;      // True during DLL_PROCESS_DETACH
+        bool            bSkipShutdown;          // Avoid shutdown for compatibility (e.g. CLEO5)
 
         // Unique ids
         uint64_t        currentModId;           // Current id for the unique mod id
@@ -553,7 +554,8 @@ class Loader : public modloader_t
             mods("modloader"),
             bRunning(false),
             bShuttingDown(false),
-            bProcessDetaching(false)
+            bProcessDetaching(false),
+            bSkipShutdown(false)
         {}
         
         // Patches the game code to run this core
