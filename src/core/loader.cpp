@@ -276,6 +276,12 @@ void Loader::Shutdown()
 {
     if(this->bRunning)
     {
+        this->bShuttingDown = true;
+        if(!this->bProcessDetaching)
+        {
+            this->ShutdownWatcher();
+            this->ShutdownMenu();
+        }
         this->bRunning = false;
     }
 }
