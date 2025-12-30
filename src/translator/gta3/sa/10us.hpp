@@ -481,19 +481,20 @@ static void sa_10us(std::map<memory_pointer_raw, memory_pointer_raw>& map)
     // ---------------------------------------------------------
     // std.additionaltxd
     // ---------------------------------------------------------
+
     if (true)
     {
+        // Hookujemy CFileLoader::LoadTexDictionary (zamiast AddRef wewnątrz niej)
+        map[0x5B6170] = 0x5B6170;
 
-        map[0x731733] = 0x731733; // Call w RwTextureRead
-        map[0x5B62C2] = 0x5B62C2; // Call w LoadTexDictionary
-        map[0x4408C3] = 0x4408C3; // Call w InitialiseGame
+        // Funkcje silnika
+        map[0x408350] = 0x408350; // CTxdStore::AddTxdSlot (niezbędne do rejestracji)
+        map[0x407100] = 0x407100; // CStreaming::RequestTxdModel
+        map[0x40EA10] = 0x40EA10; // CStreaming::LoadAllRequestedModels
+        map[0x408400] = 0x408400; // CTxdStore::AddRef
+        map[0x408340] = 0x408340; // CTxdStore::GetTxd
 
-        map[0x730E60] = 0x730E60; // RwTexDictionaryFindNamedTexture
-        map[0x408340] = 0x408340; // GetTexDictionary
-        map[0x4087E0] = 0x4087E0; // RequestTxdModel
-        map[0x40EA10] = 0x40EA10; // LoadAllRequestedModels
-        map[0x408460] = 0x408460; // CTxdStore::AddRef 
-        map[0x468D50] = 0x468D50; // CTheScripts::Init
-        map[0x5B6170] = 0x5B6170; // CFileLoader::LoadTexDictionary
+        // Adres dla hooka tekstur (bez zmian)
+        map[0x731733] = 0x731733;
     }
 }
