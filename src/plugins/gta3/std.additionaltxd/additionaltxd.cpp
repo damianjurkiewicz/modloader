@@ -9,10 +9,12 @@
 
 #include <stdinc.hpp>
 
+#include <interfaces/gta3/std.data.hpp>
 #include <Windows.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <unordered_set>
 #include <vector>
 
 
@@ -49,6 +51,8 @@ namespace additionaltxd_impl
 
     static std::vector<uint16_t>          g_txdIds;
     static std::vector<RwTexDictionary*>  g_extraDicts;
+    static std::unordered_set<std::string> g_atxdRegistry;
+    static uint32_t g_atxdRevision = 0;
 
     static bool g_hasFastloader = false;
     static bool g_loaded = false;  // means: at least one extra dict cached
@@ -77,6 +81,43 @@ namespace additionaltxd_impl
     static bool IsFastloaderName(const char* txdName)
     {
         return (txdName && std::strncmp(txdName, "fastloader", 10) == 0);
+    }
+
+    static void SyncAtxdRegistry()
+    {
+        auto* shared = GetStdDataAtxdSharedData();
+        if(!shared)
+            return;
+
+        if(shared->revision == g_atxdRevision)
+            return;
+
+        g_atxdRevision = shared->revision;
+        g_atxdRegistry.clear();
+
+        for(const auto& name : shared->txd_names)
+        {
+            std::string lowered = name;
+            modloader::tolower(lowered);
+            if(!lowered.empty())
+                g_atxdRegistry.emplace(std::move(lowered));
+        }
+
+        g_txdIds.clear();
+        g_extraDicts.clear();
+        g_loaded = false;
+        g_dirty = true;
+        g_hasFastloader = !g_atxdRegistry.empty();
+    }
+
+    static bool IsRegisteredAtxdName(const char* txdName)
+    {
+        if(!txdName)
+            return false;
+
+        std::string lowered = txdName;
+        modloader::tolower(lowered);
+        return g_atxdRegistry.find(lowered) != g_atxdRegistry.end();
     }
 
     static void RebuildCache()
@@ -136,6 +177,8 @@ namespace additionaltxd_impl
 
     static RwTexture* __cdecl hkRwTexDictionaryFindNamedTexture(RwTexDictionary* dict, const char* name)
     {
+        SyncAtxdRegistry();
+
         // First try original dictionary
         RwTexture* tex = g_ogFindNamedTex(dict, name);
         if (tex)
@@ -162,7 +205,9 @@ namespace additionaltxd_impl
         // CRITICAL: Always execute original behavior to keep game's mapping intact
         g_ogAssignRemap(txdName, txdId);
 
-        if (!IsFastloaderName(txdName))
+        SyncAtxdRegistry();
+
+        if (!IsFastloaderName(txdName) || !IsRegisteredAtxdName(txdName))
             return;
 
         // Track TXD slot id
@@ -255,6 +300,8 @@ const additionaltxd::info& additionaltxd::GetInfo()
 
 bool additionaltxd::OnStartup()
 {
+    additionaltxd_impl::SyncAtxdRegistry();
+
     if (additionaltxd_impl::Hook())
         Log("std.additionaltxd: hooks installed");
     else

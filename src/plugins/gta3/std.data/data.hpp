@@ -8,6 +8,7 @@
 
 #include "vfs.hpp"
 #include "cache.hpp"
+#include <interfaces/gta3/std.data.hpp>
 using boost::optional;
 
 // Type of config file identifier (see files_behv_t)
@@ -216,6 +217,9 @@ class DataPlugin : public modloader::basic_plugin
         readme_listing_type ReadCachedReadmeListing();
         readme_data_store   ReadCachedReadmeStore();
         void WriteReadmeCache();
+        void InitSharedData();
+        void ShutdownSharedData();
+        void RefreshAtxdSharedData();
 
     public:
         // Caching stuff
@@ -223,6 +227,9 @@ class DataPlugin : public modloader::basic_plugin
 
         // Game states
         bool has_model_info = false;
+
+        modloader_shdata_t* sh_atxd_data = nullptr;
+        StdDataAtxdSharedData atxd_shared;
 
 
         // stores references to queried readme data
@@ -886,4 +893,3 @@ inline void* MatchModelString(const std::string& modelname, int* out = nullptr)
 {
     return MatchModelString(modelname.c_str(), out);
 }
-

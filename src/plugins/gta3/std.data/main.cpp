@@ -17,6 +17,7 @@
 #include <cstdio>    // Dla sprintf_s
 #include <cctype>    // Dla isalpha
 #include <algorithm> // Dla transform
+#include <interfaces/gta3/std.data.hpp>
 
 // Linkowanie biblioteki systemowej dla MessageBoxA
 #pragma comment(lib, "user32.lib")
@@ -234,6 +235,8 @@ bool DataPlugin::OnStartup()
         this->had_cached_readme = IsPathA(cache.GetCachePath("readme.ld").data()) != 0;
         this->changed_readme_data = !had_cached_readme;
 
+        this->InitSharedData();
+
         return true;
     }
     return false;
@@ -245,6 +248,7 @@ bool DataPlugin::OnStartup()
  */
 bool DataPlugin::OnShutdown()
 {
+    this->ShutdownSharedData();
     cache.Shutdown();
     return true;
 }
@@ -504,7 +508,10 @@ void DataPlugin::Update()
 
     // Perform the Update of readmes before refreshing!
     if (has_readme_changes)
+    {
         this->UpdateReadmeState();
+        this->RefreshAtxdSharedData();
+    }
 
     // Refresh every overriden of multiple files right here
     // Note: Don't worry about this being called before the game evens boot up, the ov->Refresh() method takes care of it
@@ -529,6 +536,28 @@ void DataPlugin::Update()
     }
 
     plugin_ptr->Log("Done updating %s state.", this->data->name);
+}
+
+void DataPlugin::InitSharedData()
+{
+    if(this->loader && !this->sh_atxd_data)
+    {
+        this->sh_atxd_data = this->loader->CreateSharedData(kStdDataAtxdSharedName);
+        if(this->sh_atxd_data)
+        {
+            this->sh_atxd_data->type = MODLOADER_SHDATA_POINTER;
+            this->sh_atxd_data->p = &this->atxd_shared;
+        }
+    }
+}
+
+void DataPlugin::ShutdownSharedData()
+{
+    if(this->sh_atxd_data)
+    {
+        this->loader->DeleteSharedData(this->sh_atxd_data);
+        this->sh_atxd_data = nullptr;
+    }
 }
 
 
@@ -943,5 +972,3 @@ void DataPlugin::WriteReadmeCache()
         this->had_cached_readme = true;
     }
 }
-
-
