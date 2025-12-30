@@ -10,7 +10,7 @@
 #include "asi.h"
 #include "args_translator/translator.hpp"
 #include <tlhelp32.h>
-
+#include "../../loader.hpp"
 using namespace modloader;
 
 
@@ -89,7 +89,7 @@ void ThePlugin::LocateCleo()
 
     auto EffectivelyLocateCleo = [this]()
     {
-        scoped_gdir xdir("");
+        modloader::scoped_chdir xdir(this->loader->gamepath);
 
         HMODULE hCleo = NULL;
 
@@ -119,8 +119,8 @@ void ThePlugin::LocateCleo()
                     this->iCleoVersion = CLEO_GetVersion? CLEO_GetVersion() : 0;
                 
                     Log("CLEO library version %X found at \"%s\"", iCleoVersion, p);
-                    if(this->iCleoVersion >= 0x05000000)
-                        ::loader.bSkipShutdown = true;
+                    if (this->iCleoVersion >= 0x05000000)
+                        ((Loader*)this->loader)->bSkipShutdown = true;
                     if(this->bHasNoCleoFolder = !IsPath((std::string(loader->gamepath) + "./CLEO/").c_str()))
                         Log("Warning: No CLEO folder found, may cause problems");
                 

@@ -480,14 +480,14 @@ class Loader : public modloader_t
         bool            bAutoRefresh;           // Enables automatic refreshing of mods
         bool            bShuttingDown;          // Prevents shutdown-time logging/cleanup
         bool            bProcessDetaching;      // True during DLL_PROCESS_DETACH
-        bool            bSkipShutdown;          // Avoid shutdown for compatibility (e.g. CLEO5)
+
 
         // Unique ids
         uint64_t        currentModId;           // Current id for the unique mod id
         uint64_t        currentFileId;          // Current id for the unique file id (hibit is set)
         
         // Directories
-        std::string     gamePath;               // Full game path
+   //     std::string     gamePath;               // Full game path
         std::string     dataPath;               // .data path
         std::string     profilesPath;           // .profiles path
         std::string     commonAppDataPath;      // for all users AppData path
@@ -548,7 +548,9 @@ class Loader : public modloader_t
         void Tick();
 
     public:
-        
+     
+        bool            bSkipShutdown;          // Avoid shutdown for compatibility (e.g. CLEO5)
+        std::string     gamePath;
         // Constructor
         Loader() :
             mods("modloader"),
