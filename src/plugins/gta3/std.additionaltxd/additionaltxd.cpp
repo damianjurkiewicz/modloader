@@ -15,6 +15,8 @@
 #include <cstring>
 #include <vector>
 
+#include <interfaces/gta3/std.additionaltxd.hpp>
+
 
 
 using namespace modloader;
@@ -49,8 +51,10 @@ namespace additionaltxd_impl
 
     static std::vector<uint16_t>          g_txdIds;
     static std::vector<RwTexDictionary*>  g_extraDicts;
+    static AdditionalTxdList             g_additionalTxdFiles;
 
     static bool g_hasFastloader = false;
+    static bool g_hasAdditional = false;
     static bool g_loaded = false;  // means: at least one extra dict cached
     static bool g_dirty = false;  // ids changed => cache rebuild needed
 
@@ -79,9 +83,51 @@ namespace additionaltxd_impl
         return (txdName && std::strncmp(txdName, "fastloader", 10) == 0);
     }
 
+    static bool IsAdditionalName(const char* txdName)
+    {
+        if (!txdName)
+            return false;
+
+        std::string normalized = modloader::NormalizePath(txdName);
+        std::string base = modloader::GetPathComponentBack(normalized);
+        auto dot = base.rfind('.');
+        if (dot != std::string::npos)
+            base = base.substr(0, dot);
+
+        for (const auto& entry : g_additionalTxdFiles)
+        {
+            if (entry == base)
+                return true;
+        }
+        return false;
+    }
+
+    static void SyncAdditionalTxdFiles()
+    {
+        AdditionalTxdList new_list;
+        if (const AdditionalTxdList* list = AdditionalTxdListGet())
+            new_list = *list;
+
+        for (auto& entry : new_list)
+            modloader::NormalizePath(entry);
+
+        const bool changed = (new_list != g_additionalTxdFiles);
+        g_additionalTxdFiles = std::move(new_list);
+        g_hasAdditional = !g_additionalTxdFiles.empty();
+
+        if (!g_hasAdditional)
+        {
+            g_extraDicts.clear();
+            g_loaded = false;
+        }
+
+        if (changed)
+            g_dirty = true;
+    }
+
     static void RebuildCache()
     {
-        if (!g_hasFastloader)
+        if (!g_hasFastloader && !g_hasAdditional)
             return;
 
         g_extraDicts.clear();
@@ -109,7 +155,7 @@ namespace additionaltxd_impl
 
     static void EnsureLoaded()
     {
-        if (!g_hasFastloader)
+        if (!g_hasFastloader && !g_hasAdditional)
             return;
 
         // Rebuild if ids changed or we never successfully cached any dict
@@ -141,7 +187,7 @@ namespace additionaltxd_impl
         if (tex)
             return tex;
 
-        if (!g_hasFastloader)
+        if (!g_hasFastloader && !g_hasAdditional)
             return nullptr;
 
         // Make sure extra dicts are ready
@@ -162,7 +208,10 @@ namespace additionaltxd_impl
         // CRITICAL: Always execute original behavior to keep game's mapping intact
         g_ogAssignRemap(txdName, txdId);
 
-        if (!IsFastloaderName(txdName))
+        const bool is_fastloader = IsFastloaderName(txdName);
+        const bool is_additional = IsAdditionalName(txdName);
+
+        if (!is_fastloader && !is_additional)
             return;
 
         // Track TXD slot id
@@ -178,7 +227,8 @@ namespace additionaltxd_impl
         // Keep it referenced so it doesn't get unloaded
         AddRefByName()(const_cast<char*>(txdName));
 
-        g_hasFastloader = true;
+        g_hasFastloader = g_hasFastloader || is_fastloader;
+        g_hasAdditional = g_hasAdditional || is_additional;
 
        
 
@@ -241,6 +291,7 @@ public:
     bool InstallFile(const modloader::file&);
     bool ReinstallFile(const modloader::file&);
     bool UninstallFile(const modloader::file&);
+    void Update() override;
 
 } additionaltxd_plugin;
 
@@ -255,6 +306,7 @@ const additionaltxd::info& additionaltxd::GetInfo()
 
 bool additionaltxd::OnStartup()
 {
+    additionaltxd_impl::SyncAdditionalTxdFiles();
     if (additionaltxd_impl::Hook())
         Log("std.additionaltxd: hooks installed");
     else
@@ -266,6 +318,11 @@ bool additionaltxd::OnStartup()
 bool additionaltxd::OnShutdown()
 {
     return true;
+}
+
+void additionaltxd::Update()
+{
+    additionaltxd_impl::SyncAdditionalTxdFiles();
 }
 
 int additionaltxd::GetBehaviour(modloader::file&)
