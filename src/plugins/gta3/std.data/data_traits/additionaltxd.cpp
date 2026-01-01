@@ -1,22 +1,32 @@
-/*
+﻿/*
  * Copyright (C) 2024  LINK/2012 <dma_2012@hotmail.com>
  * Licensed under the MIT License, see LICENSE at top level directory.
  *
  */
 #include <stdinc.hpp>
 #include "../data_traits.hpp"
-#include <interfaces/gta3/std.additionaltxd.hpp>
 #include <unordered_set>
 
 using namespace modloader;
+using AdditionalTxdList = std::vector<std::string>;
 
-namespace {
+static const char* AdditionalTxdListSharedName()
+{
+    return "AdditionalTxdListGet";
+}
 
+
+
+// Struktury muszą być widoczne globalnie dla RTTI
 struct additionaltxd_traits : public data_traits
 {
     struct dtraits : modloader::dtraits::OpenFile
     {
         static const char* what() { return "additional txd"; }
+
+        // POPRAWKA: Zmiana ze zmiennej na funkcję statyczną
+        // data.hpp oczekuje wywołania datafile(), aby obliczyć hash
+        static const char* datafile() { return "additionaltxd"; }
     };
 };
 
@@ -27,9 +37,12 @@ struct additionaltxd_store
 
     template<class Archive>
     void serialize(Archive& archive)
-    { archive(entries); }
+    {
+        archive(entries);
+    }
 };
 
+// Rejestracja RTTI w zakresie globalnym
 REGISTER_RTTI_FOR_ANY(additionaltxd_store);
 
 static modloader_shdata_t* g_additional_txd_shdata = nullptr;
@@ -77,8 +90,6 @@ static std::string ExtractTxdName(const std::string& path)
     return base;
 }
 
-} // namespace
-
 void ShutdownAdditionalTxdSharedData()
 {
     if (g_additional_txd_shdata)
@@ -89,31 +100,31 @@ void ShutdownAdditionalTxdSharedData()
 }
 
 static auto xinit = initializer([](DataPlugin* plugin_ptr)
-{
-    CreateAdditionalTxdSharedData();
-
-    plugin_ptr->AddReader<additionaltxd_store>([](const std::string& line) -> maybe_readable<additionaltxd_store>
     {
-        if (!modloader::starts_with(line.c_str(), "ATXD", false))
-            return nothing;
+        CreateAdditionalTxdSharedData();
 
-        std::string tag;
-        std::string rest;
-        std::stringstream stream(line);
-        if (!(stream >> tag))
-            return nothing;
+        plugin_ptr->AddReader<additionaltxd_store>([](const std::string& line) -> maybe_readable<additionaltxd_store>
+            {
+                if (!modloader::starts_with(line.c_str(), "ATXD", false))
+                    return nothing;
 
-        std::getline(stream, rest);
-        modloader::trim(rest);
-        if (rest.empty())
-            return nothing;
+                std::string tag;
+                std::string rest;
+                std::stringstream stream(line);
+                if (!(stream >> tag))
+                    return nothing;
 
-        std::string name = ExtractTxdName(rest);
-        if (name.empty())
-            return nothing;
+                std::getline(stream, rest);
+                modloader::trim(rest);
+                if (rest.empty())
+                    return nothing;
 
-        additionaltxd_store store;
-        store.entries.emplace_back(std::move(name));
-        return store;
+                std::string name = ExtractTxdName(rest);
+                if (name.empty())
+                    return nothing;
+
+                additionaltxd_store store;
+                store.entries.emplace_back(std::move(name));
+                return store;
+            });
     });
-});

@@ -13,11 +13,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
-
-#include <interfaces/gta3/std.additionaltxd.hpp>
-
-
+#include <cctype> // Potrzebne do tolower
 
 using namespace modloader;
 
@@ -27,16 +25,23 @@ struct RwTexture;
 
 namespace additionaltxd_impl
 {
-    // GTA SA 1.0 US addresses used by the original implementation
-    // NOTE: If you need other EXE versions, these must be translated.
+    static const char* AdditionalTxdListSharedName()
+    {
+        return "AdditionalTxdListGet";
+    }
+
+    using AdditionalTxdList = std::vector<std::string>;
+    using AdditionalTxdListGetter = const AdditionalTxdList* (*)();
+
+    // GTA SA 1.0 US addresses
     static constexpr uintptr_t kCall_FindNamedTexture = 0x731733;
     static constexpr uintptr_t kCall_AssignRemapTxd = 0x5B62C2;
 
-    // Game functions (addresses known from common GTA SA databases / plugin-sdk meta)
-    static constexpr uintptr_t kFn_CTxdStore_AddRefByName = 0x731C80; // int __cdecl CTxdStore::AddRef(char* name)
-    static constexpr uintptr_t kFn_CTxdStore_GetTxdDictionary = 0x408340; // RwTexDictionary* __cdecl CTxdStore::GetTxd(int id)
-    static constexpr uintptr_t kFn_CStreaming_RequestTxdModel = 0x407100; // void __cdecl CStreaming::RequestTxdModel(int txdId, int flags)
-    static constexpr uintptr_t kFn_CStreaming_LoadAllRequestedModels = 0x40EA10; // void __cdecl CStreaming::LoadAllRequestedModels(bool)
+    // Game functions
+    static constexpr uintptr_t kFn_CTxdStore_AddRefByName = 0x731C80;
+    static constexpr uintptr_t kFn_CTxdStore_GetTxdDictionary = 0x408340;
+    static constexpr uintptr_t kFn_CStreaming_RequestTxdModel = 0x407100;
+    static constexpr uintptr_t kFn_CStreaming_LoadAllRequestedModels = 0x40EA10;
 
     using fnFindNamedTex = RwTexture * (__cdecl*)(RwTexDictionary*, const char*);
     using fnAssignRemap = void(__cdecl*)(const char*, uint16_t);
@@ -55,8 +60,17 @@ namespace additionaltxd_impl
 
     static bool g_hasFastloader = false;
     static bool g_hasAdditional = false;
-    static bool g_loaded = false;  // means: at least one extra dict cached
-    static bool g_dirty = false;  // ids changed => cache rebuild needed
+    static bool g_loaded = false;
+    static bool g_dirty = false;
+
+    // --- NOWA FUNKCJA POMOCNICZA ---
+    // Zamienia string na małe litery, żeby ignorować wielkość liter przy porównywaniu
+    static std::string ToLower(std::string str)
+    {
+        std::transform(str.begin(), str.end(), str.begin(),
+            [](unsigned char c) { return std::tolower(c); });
+        return str;
+    }
 
     static fnAddRefByName AddRefByName()
     {
@@ -80,6 +94,7 @@ namespace additionaltxd_impl
 
     static bool IsFastloaderName(const char* txdName)
     {
+        // Sprawdza tylko prefiks "fastloader" - to działało dobrze w Twoich testach
         return (txdName && std::strncmp(txdName, "fastloader", 10) == 0);
     }
 
@@ -94,8 +109,14 @@ namespace additionaltxd_impl
         if (dot != std::string::npos)
             base = base.substr(0, dot);
 
+        // --- POPRAWKA ---
+        // Zamieniamy nazwę otrzymaną z gry na małe litery przed sprawdzeniem w liście.
+        // Jeśli gra zapyta o "LALA", a w configu masz "lala", teraz to zadziała.
+        base = ToLower(base);
+
         for (const auto& entry : g_additionalTxdFiles)
         {
+            // entry też jest trzymane jako lowercase (zrobione w SyncAdditionalTxdFiles)
             if (entry == base)
                 return true;
         }
@@ -105,11 +126,23 @@ namespace additionaltxd_impl
     static void SyncAdditionalTxdFiles()
     {
         AdditionalTxdList new_list;
-        if (const AdditionalTxdList* list = AdditionalTxdListGet())
-            new_list = *list;
+        if (modloader_shdata_t* data = modloader::plugin_ptr->loader->FindSharedData(AdditionalTxdListSharedName()))
+        {
+            if (data->type == MODLOADER_SHDATA_FUNCTION)
+            {
+                auto getter = reinterpret_cast<AdditionalTxdListGetter>(data->f);
+                if (const AdditionalTxdList* list = getter())
+                    new_list = *list;
+            }
+        }
 
-        for (auto& entry : new_list)
-            modloader::NormalizePath(entry);
+        // --- POPRAWKA ---
+        // NormalizePath zwraca string, więc musimy przypisać wynik.
+        // Dodatkowo wymuszamy małe litery, żeby lista była spójna.
+        for (auto& entry : new_list) {
+            entry = modloader::NormalizePath(entry);
+            entry = ToLower(entry);
+        }
 
         const bool changed = (new_list != g_additionalTxdFiles);
         g_additionalTxdFiles = std::move(new_list);
@@ -132,14 +165,11 @@ namespace additionaltxd_impl
 
         g_extraDicts.clear();
 
-        // Request all stored TXD slots
         for (uint16_t txdId : g_txdIds)
-            RequestTxdModel()(static_cast<int>(txdId), 2 /* STREAMING_PRIORITY_REQUEST */);
+            RequestTxdModel()(static_cast<int>(txdId), 2);
 
-        // Force streaming to load what was requested
         LoadAllRequestedModels()(true);
 
-        // Cache dictionaries
         for (uint16_t txdId : g_txdIds)
         {
             RwTexDictionary* dict = GetTxdDictionary()(static_cast<int>(txdId));
@@ -149,8 +179,6 @@ namespace additionaltxd_impl
 
         g_loaded = !g_extraDicts.empty();
         g_dirty = false;
-
-      
     }
 
     static void EnsureLoaded()
@@ -158,21 +186,18 @@ namespace additionaltxd_impl
         if (!g_hasFastloader && !g_hasAdditional)
             return;
 
-        // Rebuild if ids changed or we never successfully cached any dict
         if (g_dirty || !g_loaded)
             RebuildCache();
     }
 
     static void PreloadOne(uint16_t txdId)
     {
-        // Preload as early as possible to avoid "too late" misses in FindNamedTexture
         RequestTxdModel()(static_cast<int>(txdId), 2);
         LoadAllRequestedModels()(true);
 
         RwTexDictionary* dict = GetTxdDictionary()(static_cast<int>(txdId));
         if (dict)
         {
-            // Avoid duplicates
             if (std::find(g_extraDicts.begin(), g_extraDicts.end(), dict) == g_extraDicts.end())
                 g_extraDicts.push_back(dict);
 
@@ -182,7 +207,6 @@ namespace additionaltxd_impl
 
     static RwTexture* __cdecl hkRwTexDictionaryFindNamedTexture(RwTexDictionary* dict, const char* name)
     {
-        // First try original dictionary
         RwTexture* tex = g_ogFindNamedTex(dict, name);
         if (tex)
             return tex;
@@ -190,7 +214,6 @@ namespace additionaltxd_impl
         if (!g_hasFastloader && !g_hasAdditional)
             return nullptr;
 
-        // Make sure extra dicts are ready
         EnsureLoaded();
 
         for (RwTexDictionary* extraDict : g_extraDicts)
@@ -205,7 +228,6 @@ namespace additionaltxd_impl
 
     static void __cdecl hkAssignRemapTxd(const char* txdName, uint16_t txdId)
     {
-        // CRITICAL: Always execute original behavior to keep game's mapping intact
         g_ogAssignRemap(txdName, txdId);
 
         const bool is_fastloader = IsFastloaderName(txdName);
@@ -214,31 +236,25 @@ namespace additionaltxd_impl
         if (!is_fastloader && !is_additional)
             return;
 
-        // Track TXD slot id
         const bool isNew =
             (std::find(g_txdIds.begin(), g_txdIds.end(), txdId) == g_txdIds.end());
 
         if (isNew)
         {
             g_txdIds.push_back(txdId);
-            g_dirty = true; // ids changed => cache rebuild needed
+            g_dirty = true;
         }
 
-        // Keep it referenced so it doesn't get unloaded
         AddRefByName()(const_cast<char*>(txdName));
 
         g_hasFastloader = g_hasFastloader || is_fastloader;
         g_hasAdditional = g_hasAdditional || is_additional;
 
-       
-
-        // Recommended: preload right here (early enough before materials resolve textures)
         PreloadOne(txdId);
     }
 
     static bool PatchCall(uintptr_t callSite, void* newTarget, void** outOriginal)
     {
-        // CALL rel32 is 0xE8 <rel32>
         auto* p = reinterpret_cast<uint8_t*>(callSite);
         if (*p != 0xE8)
             return false;
@@ -278,9 +294,6 @@ namespace additionaltxd_impl
     }
 }
 
-/*
- * The plugin object
- */
 class additionaltxd : public modloader::basic_plugin
 {
 public:
@@ -327,7 +340,6 @@ void additionaltxd::Update()
 
 int additionaltxd::GetBehaviour(modloader::file&)
 {
-    // This plugin doesn't install files; it only hooks game functions.
     return MODLOADER_BEHAVIOUR_NO;
 }
 
