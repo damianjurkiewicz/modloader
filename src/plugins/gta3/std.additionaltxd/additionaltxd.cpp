@@ -67,7 +67,8 @@ namespace additionaltxd_impl
     static std::vector<RwTexDictionary*>  g_extraDicts;
     static AdditionalTxdList             g_additionalTxdFiles;
 
-    static bool g_hasFastloader = false;
+    // Zmieniono nazwę zmiennej z g_hasFastloader na g_hasVehicleLoader dla czytelności
+    static bool g_hasVehicleLoader = false;
     static bool g_hasAdditional = false;
     static bool g_loaded = false;
     static bool g_dirty = false;
@@ -99,11 +100,40 @@ namespace additionaltxd_impl
         return reinterpret_cast<fnLoadAllReq>(kFn_CStreaming_LoadAllRequestedModels);
     }
 
-    static bool IsFastloaderName(const char* txdName)
+    // --- ZMIANA: Nowa funkcja sprawdzająca nazwę 'vehicle' i limit do 5 ---
+    static bool IsVehicleLoaderName(const char* txdName)
     {
-        bool isFast = (txdName && std::strncmp(txdName, "fastloader", 10) == 0);
-        if (isFast) LogF("Detected 'fastloader' prefix: %s", txdName);
-        return isFast;
+        if (!txdName) return false;
+
+        // 1. Sprawdź czy nazwa zaczyna się od "vehicle" (7 znaków)
+        if (std::strncmp(txdName, "vehicle", 7) != 0)
+            return false;
+
+        // Wskaźnik na część po słowie "vehicle"
+        const char* suffix = txdName + 7;
+
+        // 2. [ZMIANA] Pomiń "vehicle.txd" (czyli samą nazwę "vehicle" bez numeru)
+        if (*suffix == '\0')
+        {
+            // Tutaj celowo zwracamy false, żeby ignorować czyste 'vehicle.txd'
+            return false;
+        }
+
+        // 3. Sprawdzamy numerację (limit do 5)
+        // Musi być cyfra, żebyśmy w ogóle to rozważali
+        if (std::isdigit(static_cast<unsigned char>(*suffix)))
+        {
+            int number = std::atoi(suffix);
+
+            // LIMIT: tylko vehicle1 do vehicle5
+            if (number >= 1 && number <= 5)
+            {
+                LogF("Detected 'vehicle' prefix with ID %d: %s", number, txdName);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Funkcja do synchronizacji listy z traits (z loader.txt)
@@ -165,7 +195,8 @@ namespace additionaltxd_impl
 
     static void RebuildCache()
     {
-        if (!g_hasFastloader && !g_hasAdditional)
+        // Zaktualizowano zmienną
+        if (!g_hasVehicleLoader && !g_hasAdditional)
             return;
 
         LogF("RebuildCache: Reloading %d stored TXD IDs...", (int)g_txdIds.size());
@@ -190,7 +221,8 @@ namespace additionaltxd_impl
 
     static void EnsureLoaded()
     {
-        if (!g_hasFastloader && !g_hasAdditional) return;
+        // Zaktualizowano zmienną
+        if (!g_hasVehicleLoader && !g_hasAdditional) return;
 
         if (g_dirty || !g_loaded)
         {
@@ -222,7 +254,8 @@ namespace additionaltxd_impl
         RwTexture* tex = g_ogFindNamedTex(dict, name);
         if (tex) return tex;
 
-        if (!g_hasFastloader && !g_hasAdditional) return nullptr;
+        // Zaktualizowano zmienną
+        if (!g_hasVehicleLoader && !g_hasAdditional) return nullptr;
 
         EnsureLoaded();
 
@@ -241,23 +274,19 @@ namespace additionaltxd_impl
 
     static void __cdecl hkAssignRemapTxd(const char* txdName, uint16_t txdId)
     {
-        // --- KLUCZOWA POPRAWKA ---
-        // Wymuszamy sprawdzenie listy z configu (traits) WŁAŚNIE TERAZ.
-        // Gra właśnie ładuje plik (np. lala.txd), więc musimy być pewni,
-        // że "AdditionalTxdList" jest aktualna, bo mogła zostać załadowana
-        // ułamek sekundy temu przez DataPlugin.
+        // Wymuszamy sprawdzenie listy z configu
         SyncAdditionalTxdFiles();
-        // -------------------------
 
         g_ogAssignRemap(txdName, txdId);
 
-        const bool is_fastloader = IsFastloaderName(txdName);
+        // --- ZMIANA: Używamy nowej funkcji IsVehicleLoaderName ---
+        const bool is_vehicle_loader = IsVehicleLoaderName(txdName);
         const bool is_additional = IsAdditionalName(txdName);
 
-        if (!is_fastloader && !is_additional)
+        if (!is_vehicle_loader && !is_additional)
             return;
 
-        LogF("Hook AssignRemap: '%s' (ID: %d) -> Identified as Fast/Additional", txdName, txdId);
+        LogF("Hook AssignRemap: '%s' (ID: %d) -> Identified as Vehicle/Additional", txdName, txdId);
 
         const bool isNew = (std::find(g_txdIds.begin(), g_txdIds.end(), txdId) == g_txdIds.end());
         if (isNew)
@@ -269,7 +298,8 @@ namespace additionaltxd_impl
 
         AddRefByName()(const_cast<char*>(txdName));
 
-        g_hasFastloader = g_hasFastloader || is_fastloader;
+        // Zaktualizowano flagę
+        g_hasVehicleLoader = g_hasVehicleLoader || is_vehicle_loader;
         g_hasAdditional = g_hasAdditional || is_additional;
 
         PreloadOne(txdId);
