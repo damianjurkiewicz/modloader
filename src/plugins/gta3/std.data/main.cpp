@@ -37,7 +37,6 @@ using namespace modloader;
 
 
 void LazyGtaDatPatch();
-void ShutdownAdditionalTxdSharedData();
 
 DataPlugin plugin;
 REGISTER_ML_PLUGIN(::plugin);
@@ -246,7 +245,6 @@ bool DataPlugin::OnStartup()
  */
 bool DataPlugin::OnShutdown()
 {
-    ShutdownAdditionalTxdSharedData();
     cache.Shutdown();
     return true;
 }
