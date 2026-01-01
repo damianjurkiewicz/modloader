@@ -353,6 +353,51 @@ void Loader::FolderInformation::LoadConfigFromINI()
     
     this->RemoveProfiles();
 
+    auto UpdateDefaultPrioritySection = [this](modloader_ini& ini)
+    {
+        std::map<std::string, std::string> folders;
+        FilesWalk("", "*.*", false, [&](FileWalkInfo& file)
+        {
+            if(file.is_dir)
+            {
+                std::string name = file.filename;
+                auto normalized = NormalizePath(name);
+                if(!normalized.empty())
+                    folders.emplace(std::move(normalized), std::move(name));
+            }
+            return true;
+        });
+
+        auto& priority_section = ini["Profiles.Default.Priority"];
+        std::set<std::string> existing;
+        bool updated = false;
+
+        for(auto it = priority_section.begin(); it != priority_section.end();)
+        {
+            auto normalized = NormalizePath(it->first);
+            if(!folders.count(normalized))
+            {
+                it = priority_section.erase(it);
+                updated = true;
+                continue;
+            }
+            existing.emplace(std::move(normalized));
+            ++it;
+        }
+
+        for(const auto& folder : folders)
+        {
+            if(!existing.count(folder.first))
+            {
+                priority_section[folder.second] = "50";
+                updated = true;
+            }
+        }
+
+        if(updated && !ini.write_file(loader.folderConfigFilename))
+            Log("Warning: Failed to update \"%s\" with default priorities.", loader.folderConfigFilename.c_str());
+    };
+
     // Read the profiles present in the specified ini file
     auto ReadProfilesFromINI = [this](modloader_ini& ini, std::string generator)   // generator must be empty for modloader.ini
     {
@@ -374,7 +419,10 @@ void Loader::FolderInformation::LoadConfigFromINI()
 
     // First take the profiles from modloader.ini
     if(ini.load_file(loader.folderConfigFilename))
+    {
+        UpdateDefaultPrioritySection(ini);
         ReadProfilesFromINI(ini, "");
+    }
     else
         Log("Warning: Failed to load folder config file");
 
