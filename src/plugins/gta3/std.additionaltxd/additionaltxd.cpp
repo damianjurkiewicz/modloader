@@ -15,7 +15,9 @@
 #include <cstring>
 #include <string>
 #include <vector>
-#include <cctype> // Potrzebne do tolower
+#include <cctype>
+#include <cstdio>  // vsnprintf
+#include <cstdarg> // va_list
 
 using namespace modloader;
 
@@ -23,8 +25,15 @@ using namespace modloader;
 struct RwTexDictionary;
 struct RwTexture;
 
+// 1. Forward Declaration
+class additionaltxd;
+extern additionaltxd additionaltxd_plugin;
+
 namespace additionaltxd_impl
 {
+    // 2. Deklaracja LogF
+    void LogF(const char* fmt, ...);
+
     static const char* AdditionalTxdListSharedName()
     {
         return "AdditionalTxdListGet";
@@ -63,8 +72,6 @@ namespace additionaltxd_impl
     static bool g_loaded = false;
     static bool g_dirty = false;
 
-    // --- NOWA FUNKCJA POMOCNICZA ---
-    // Zamienia string na małe litery, żeby ignorować wielkość liter przy porównywaniu
     static std::string ToLower(std::string str)
     {
         std::transform(str.begin(), str.end(), str.begin(),
@@ -94,37 +101,15 @@ namespace additionaltxd_impl
 
     static bool IsFastloaderName(const char* txdName)
     {
-        // Sprawdza tylko prefiks "fastloader" - to działało dobrze w Twoich testach
-        return (txdName && std::strncmp(txdName, "fastloader", 10) == 0);
+        bool isFast = (txdName && std::strncmp(txdName, "fastloader", 10) == 0);
+        if (isFast) LogF("Detected 'fastloader' prefix: %s", txdName);
+        return isFast;
     }
 
-    static bool IsAdditionalName(const char* txdName)
-    {
-        if (!txdName)
-            return false;
-
-        std::string normalized = modloader::NormalizePath(txdName);
-        std::string base = modloader::GetPathComponentBack(normalized);
-        auto dot = base.rfind('.');
-        if (dot != std::string::npos)
-            base = base.substr(0, dot);
-
-        // --- POPRAWKA ---
-        // Zamieniamy nazwę otrzymaną z gry na małe litery przed sprawdzeniem w liście.
-        // Jeśli gra zapyta o "LALA", a w configu masz "lala", teraz to zadziała.
-        base = ToLower(base);
-
-        for (const auto& entry : g_additionalTxdFiles)
-        {
-            // entry też jest trzymane jako lowercase (zrobione w SyncAdditionalTxdFiles)
-            if (entry == base)
-                return true;
-        }
-        return false;
-    }
-
+    // Funkcja do synchronizacji listy z traits (z loader.txt)
     static void SyncAdditionalTxdFiles()
     {
+        // Pobieramy dane ze współdzielonej pamięci (gdzie traits zapisują dane z loader.txt)
         AdditionalTxdList new_list;
         if (modloader_shdata_t* data = modloader::plugin_ptr->loader->FindSharedData(AdditionalTxdListSharedName()))
         {
@@ -136,26 +121,46 @@ namespace additionaltxd_impl
             }
         }
 
-        // --- POPRAWKA ---
-        // NormalizePath zwraca string, więc musimy przypisać wynik.
-        // Dodatkowo wymuszamy małe litery, żeby lista była spójna.
-        for (auto& entry : new_list) {
-            entry = modloader::NormalizePath(entry);
-            entry = ToLower(entry);
-        }
-
-        const bool changed = (new_list != g_additionalTxdFiles);
-        g_additionalTxdFiles = std::move(new_list);
-        g_hasAdditional = !g_additionalTxdFiles.empty();
-
-        if (!g_hasAdditional)
+        // Jeśli lista się zmieniła, aktualizujemy
+        if (new_list != g_additionalTxdFiles)
         {
-            g_extraDicts.clear();
-            g_loaded = false;
-        }
+            LogF("SyncAdditionalTxdFiles: Update detected! Old size: %d, New size: %d",
+                (int)g_additionalTxdFiles.size(), (int)new_list.size());
 
-        if (changed)
-            g_dirty = true;
+            for (auto& entry : new_list) {
+                // Normalizujemy nazwy (małe litery)
+                entry = modloader::NormalizePath(entry);
+                entry = ToLower(entry);
+                LogF(" - Config Entry: '%s'", entry.c_str());
+            }
+
+            g_additionalTxdFiles = std::move(new_list);
+            g_hasAdditional = !g_additionalTxdFiles.empty();
+            g_dirty = true; // Oznaczamy, że trzeba przeładować cache
+        }
+    }
+
+    static bool IsAdditionalName(const char* txdName)
+    {
+        if (!txdName) return false;
+
+        std::string normalized = modloader::NormalizePath(txdName);
+        std::string base = modloader::GetPathComponentBack(normalized);
+        auto dot = base.rfind('.');
+        if (dot != std::string::npos)
+            base = base.substr(0, dot);
+
+        base = ToLower(base);
+
+        for (const auto& entry : g_additionalTxdFiles)
+        {
+            if (entry == base)
+            {
+                LogF("Match found for additional TXD: '%s' (matches config entry: '%s')", txdName, entry.c_str());
+                return true;
+            }
+        }
+        return false;
     }
 
     static void RebuildCache()
@@ -163,6 +168,7 @@ namespace additionaltxd_impl
         if (!g_hasFastloader && !g_hasAdditional)
             return;
 
+        LogF("RebuildCache: Reloading %d stored TXD IDs...", (int)g_txdIds.size());
         g_extraDicts.clear();
 
         for (uint16_t txdId : g_txdIds)
@@ -173,25 +179,29 @@ namespace additionaltxd_impl
         for (uint16_t txdId : g_txdIds)
         {
             RwTexDictionary* dict = GetTxdDictionary()(static_cast<int>(txdId));
-            if (dict)
-                g_extraDicts.push_back(dict);
+            if (dict) g_extraDicts.push_back(dict);
+            else LogF("RebuildCache: Warning! Failed to get dictionary for TXD ID %d", txdId);
         }
 
         g_loaded = !g_extraDicts.empty();
         g_dirty = false;
+        LogF("RebuildCache: Cache rebuilt. Extra dicts count: %d", (int)g_extraDicts.size());
     }
 
     static void EnsureLoaded()
     {
-        if (!g_hasFastloader && !g_hasAdditional)
-            return;
+        if (!g_hasFastloader && !g_hasAdditional) return;
 
         if (g_dirty || !g_loaded)
+        {
+            LogF("EnsureLoaded: Dirty flag set or not loaded. Rebuilding...");
             RebuildCache();
+        }
     }
 
     static void PreloadOne(uint16_t txdId)
     {
+        LogF("PreloadOne: Requesting TXD ID %d", txdId);
         RequestTxdModel()(static_cast<int>(txdId), 2);
         LoadAllRequestedModels()(true);
 
@@ -199,8 +209,10 @@ namespace additionaltxd_impl
         if (dict)
         {
             if (std::find(g_extraDicts.begin(), g_extraDicts.end(), dict) == g_extraDicts.end())
+            {
                 g_extraDicts.push_back(dict);
-
+                LogF("PreloadOne: Dictionary loaded and added to cache.");
+            }
             g_loaded = true;
         }
     }
@@ -208,11 +220,9 @@ namespace additionaltxd_impl
     static RwTexture* __cdecl hkRwTexDictionaryFindNamedTexture(RwTexDictionary* dict, const char* name)
     {
         RwTexture* tex = g_ogFindNamedTex(dict, name);
-        if (tex)
-            return tex;
+        if (tex) return tex;
 
-        if (!g_hasFastloader && !g_hasAdditional)
-            return nullptr;
+        if (!g_hasFastloader && !g_hasAdditional) return nullptr;
 
         EnsureLoaded();
 
@@ -220,14 +230,25 @@ namespace additionaltxd_impl
         {
             if (!extraDict) continue;
             tex = g_ogFindNamedTex(extraDict, name);
-            if (tex) return tex;
+            if (tex)
+            {
+                LogF("Texture found in extra dict! Name: '%s'", name);
+                return tex;
+            }
         }
-
         return nullptr;
     }
 
     static void __cdecl hkAssignRemapTxd(const char* txdName, uint16_t txdId)
     {
+        // --- KLUCZOWA POPRAWKA ---
+        // Wymuszamy sprawdzenie listy z configu (traits) WŁAŚNIE TERAZ.
+        // Gra właśnie ładuje plik (np. lala.txd), więc musimy być pewni,
+        // że "AdditionalTxdList" jest aktualna, bo mogła zostać załadowana
+        // ułamek sekundy temu przez DataPlugin.
+        SyncAdditionalTxdFiles();
+        // -------------------------
+
         g_ogAssignRemap(txdName, txdId);
 
         const bool is_fastloader = IsFastloaderName(txdName);
@@ -236,13 +257,14 @@ namespace additionaltxd_impl
         if (!is_fastloader && !is_additional)
             return;
 
-        const bool isNew =
-            (std::find(g_txdIds.begin(), g_txdIds.end(), txdId) == g_txdIds.end());
+        LogF("Hook AssignRemap: '%s' (ID: %d) -> Identified as Fast/Additional", txdName, txdId);
 
+        const bool isNew = (std::find(g_txdIds.begin(), g_txdIds.end(), txdId) == g_txdIds.end());
         if (isNew)
         {
             g_txdIds.push_back(txdId);
             g_dirty = true;
+            LogF(" -> New ID added to list. Marking dirty.");
         }
 
         AddRefByName()(const_cast<char*>(txdName));
@@ -256,13 +278,11 @@ namespace additionaltxd_impl
     static bool PatchCall(uintptr_t callSite, void* newTarget, void** outOriginal)
     {
         auto* p = reinterpret_cast<uint8_t*>(callSite);
-        if (*p != 0xE8)
-            return false;
+        if (*p != 0xE8) return false;
 
         int32_t oldRel = *reinterpret_cast<int32_t*>(p + 1);
         uintptr_t oldTarget = callSite + 5u + static_cast<uintptr_t>(oldRel);
-        if (outOriginal)
-            *outOriginal = reinterpret_cast<void*>(oldTarget);
+        if (outOriginal) *outOriginal = reinterpret_cast<void*>(oldTarget);
 
         uintptr_t newT = reinterpret_cast<uintptr_t>(newTarget);
         int32_t newRel = static_cast<int32_t>(newT - (callSite + 5u));
@@ -282,6 +302,7 @@ namespace additionaltxd_impl
 
     static bool Hook()
     {
+        LogF("Installing hooks...");
         bool ok1 = PatchCall(kCall_FindNamedTexture,
             reinterpret_cast<void*>(&hkRwTexDictionaryFindNamedTexture),
             reinterpret_cast<void**>(&g_ogFindNamedTex));
@@ -290,10 +311,11 @@ namespace additionaltxd_impl
             reinterpret_cast<void*>(&hkAssignRemapTxd),
             reinterpret_cast<void**>(&g_ogAssignRemap));
 
-        return ok1 && ok2 && g_ogFindNamedTex && g_ogAssignRemap;
+        return (ok1 && ok2);
     }
 }
 
+// 3. Definicja Klasy
 class additionaltxd : public modloader::basic_plugin
 {
 public:
@@ -310,6 +332,20 @@ public:
 
 REGISTER_ML_PLUGIN(::additionaltxd_plugin);
 
+// 4. Implementacja LogF
+void additionaltxd_impl::LogF(const char* fmt, ...)
+{
+    char buffer[2048];
+    int offset = snprintf(buffer, sizeof(buffer), "STD: ");
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer + offset, sizeof(buffer) - offset, fmt, args);
+    va_end(args);
+    additionaltxd_plugin.Log(buffer);
+}
+
+// --- Metody Pluginu ---
+
 const additionaltxd::info& additionaltxd::GetInfo()
 {
     static const char* extable[] = { 0 };
@@ -319,30 +355,23 @@ const additionaltxd::info& additionaltxd::GetInfo()
 
 bool additionaltxd::OnStartup()
 {
-    additionaltxd_impl::SyncAdditionalTxdFiles();
+    additionaltxd_impl::LogF("OnStartup called.");
     if (additionaltxd_impl::Hook())
-        Log("std.additionaltxd: hooks installed");
+        additionaltxd_impl::LogF("Hooks installed.");
     else
-        Log("std.additionaltxd: failed to install hooks (wrong exe version / address?)");
-
+        additionaltxd_impl::LogF("Failed to install hooks!");
     return true;
 }
 
-bool additionaltxd::OnShutdown()
-{
-    return true;
-}
+bool additionaltxd::OnShutdown() { return true; }
 
 void additionaltxd::Update()
 {
+    // Sync też tutaj, na wypadek gdyby coś się zmieniło w locie (hot reload)
     additionaltxd_impl::SyncAdditionalTxdFiles();
 }
 
-int additionaltxd::GetBehaviour(modloader::file&)
-{
-    return MODLOADER_BEHAVIOUR_NO;
-}
-
+int additionaltxd::GetBehaviour(modloader::file&) { return MODLOADER_BEHAVIOUR_NO; }
 bool additionaltxd::InstallFile(const modloader::file&) { return true; }
 bool additionaltxd::ReinstallFile(const modloader::file&) { return true; }
 bool additionaltxd::UninstallFile(const modloader::file&) { return true; }
