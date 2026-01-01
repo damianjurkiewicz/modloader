@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Mod Loader - Address Translation Between Game Versions
  * Copyright (C) 2013-2014  LINK/2012 <dma_2012@hotmail.com>
  * Licensed under the MIT License, see LICENSE at top level directory.
@@ -476,5 +476,25 @@ static void sa_10us(std::map<memory_pointer_raw, memory_pointer_raw>& map)
         map[0x5805D3] = 0x5805D3;
         map[0x57FE57] = 0x57FE57;
         map[0x57FE96] = 0x57FE96;
+    }
+
+    // ---------------------------------------------------------
+    // std.additionaltxd
+    // ---------------------------------------------------------
+
+    if (true)
+    {
+        // Hookujemy CFileLoader::LoadTexDictionary (zamiast AddRef wewnątrz niej)
+        map[0x5B6170] = 0x5B6170;
+
+        // Funkcje silnika
+        map[0x408350] = 0x408350; // CTxdStore::AddTxdSlot (niezbędne do rejestracji)
+        map[0x407100] = 0x407100; // CStreaming::RequestTxdModel
+        map[0x40EA10] = 0x40EA10; // CStreaming::LoadAllRequestedModels
+        map[0x408400] = 0x408400; // CTxdStore::AddRef
+        map[0x408340] = 0x408340; // CTxdStore::GetTxd
+
+        // Adres dla hooka tekstur (bez zmian)
+        map[0x731733] = 0x731733;
     }
 }
