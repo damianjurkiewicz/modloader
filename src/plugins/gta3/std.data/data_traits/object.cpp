@@ -14,8 +14,8 @@ struct object_traits : public data_traits
     static const bool has_sections      = false;
     static const bool per_line_section  = false;
 
-    static const bool has_eof_string = true;
-    static const char* eof_string() { return "*"; }
+    static const bool has_eof_string = false;
+
 
     struct dtraits : modloader::dtraits::SaOpenOr3VcLoadFileDetour
     {
@@ -37,12 +37,7 @@ struct object_traits : public data_traits
         return hash_model(get<0>(value));
     }
 
-public: // eof_string related
-    bool eof = false;
 
-    template<class Archive>
-    void serialize(Archive& archive)
-    { archive(this->eof); }
 };
 
 using object_store = gta3::data_store<object_traits, std::map<
